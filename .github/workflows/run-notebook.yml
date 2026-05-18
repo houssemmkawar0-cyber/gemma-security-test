@@ -1,0 +1,78 @@
+name: 🚀 Exécuter notebook Kaggle
+
+on:
+  workflow_dispatch:
+    inputs:
+      notebook_slug:
+        description: 'Notebook Kaggle à exécuter'
+        required: false
+        default: 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah'
+        type: string
+
+  push:
+    branches: [ main, master ]
+
+  schedule:
+    - cron: '0 2 * * *'
+
+jobs:
+  run-kaggle-notebook:
+    name: 🏃 Exécuter notebook sur Kaggle GPU
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: 🔧 Installer Kaggle API
+        run: |
+          pip install kaggle --upgrade
+          mkdir -p ~/.kaggle
+          echo '{"username":"${{ secrets.KAGGLE_USERNAME }}","key":"${{ secrets.KAGGLE_KEY }}"}' > ~/.kaggle/kaggle.json
+          chmod 600 ~/.kaggle/kaggle.json
+
+      - name: 🔍 Vérifier le notebook
+        run: |
+          NOTEBOOK="${{ github.event.inputs.notebook_slug }}"
+          echo "📓 Notebook cible: $NOTEBOOK"
+          kaggle kernels list --user ${{ secrets.KAGGLE_USERNAME }} | grep -i "promptfoo" || echo "⚠️ Vérification manuelle"
+
+      - name: 🚀 Lancer l'exécution
+        run: |
+          NOTEBOOK="${{ github.event.inputs.notebook_slug }}"
+          echo "🚀 Démarrage: $NOTEBOOK"
+          kaggle kernels push -p . --kernel-name "$NOTEBOOK" || echo "Push effectué"
+
+      - name: ⏳ Attendre la fin
+        run: |
+          NOTEBOOK="${{ github.event.inputs.notebook_slug }}"
+          echo "⏳ Surveillance..."
+          for i in {1..120}; do
+            STATUS=$(kaggle kernels status $NOTEBOOK 2>&1)
+            echo "[$i/120] $STATUS"
+            echo "$STATUS" | grep -q "complete" && break
+            echo "$STATUS" | grep -q "error" && exit 1
+            sleep 30
+          done
+
+      - name: 📥 Télécharger les résultats
+        run: |
+          NOTEBOOK="${{ github.event.inputs.notebook_slug }}"
+          mkdir -p ./results
+          kaggle kernels output $NOTEBOOK -p ./results/
+          echo "📁 Fichiers récupérés:"
+          ls -la ./results/
+
+      - name: 📤 Upload résultats
+        uses: actions/upload-artifact@v4
+        with:
+          name: kaggle-results
+          path: ./results/
+          retention-days: 30
+
+      - name: 📊 Résumé
+        run: |
+          echo "## ✅ Exécution terminée" >> $GITHUB_STEP_SUMMARY
+          echo "**Notebook:** ${{ github.event.inputs.notebook_slug }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
