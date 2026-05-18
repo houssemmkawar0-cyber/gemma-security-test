@@ -6,5 +6,8 @@
   "kernel_type": "notebook",
   "is_private": true,
   "enable_gpu": true,
-  "enable_internet": true
+  "enable_internet": true,
+  "env_vars": {
+    "GROQ_API_KEY": "PLACEHOLDER_GROQ"
+  }
 }

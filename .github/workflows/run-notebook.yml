@@ -19,10 +19,7 @@ jobs:
   run-kaggle-notebook:
     name: 🏃 Kaggle GPU Run
     runs-on: ubuntu-latest
-    env:
-      GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
     timeout-minutes: 60
-
 
     steps:
 
@@ -44,30 +41,44 @@ jobs:
           chmod 600 ~/.kaggle/kaggle.json
 
       # =========================
-      # 3. Vérification notebook
+      # 3. Préparer metadata depuis template
       # =========================
-      - name: 🔍 Check notebook
+      - name: 📋 Préparer metadata depuis template
         run: |
-          NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
-          echo "📓 Target notebook: $NOTEBOOK"
+          cp mon-notebook/kernel-metadata.template.json \
+             mon-notebook/kernel-metadata.json
 
-          kaggle kernels list --user ${{ secrets.KAGGLE_USERNAME }} | head -20
+          echo "✅ metadata.json créé depuis template"
 
       # =========================
-      # 4. PUSH vers Kaggle (déclenche run)
+      # 4. Inject GROQ API KEY
+      # =========================
+      - name: 🔑 Inject GROQ_API_KEY
+        run: |
+          sed -i "s|PLACEHOLDER_GROQ|${{ secrets.GROQ_API_KEY }}|g" \
+            mon-notebook/kernel-metadata.json
+
+          if grep -q "PLACEHOLDER_GROQ" mon-notebook/kernel-metadata.json; then
+            echo "❌ Injection échouée"
+            exit 1
+          fi
+
+          echo "✅ GROQ_API_KEY injectée"
+
+      # =========================
+      # 5. Push vers Kaggle
       # =========================
       - name: 🚀 Push notebook to Kaggle
         run: |
           echo "🚀 Pushing notebook..."
-
           kaggle kernels push -p mon-notebook
 
       # =========================
-      # 5. Attente exécution (ROBUSTE)
+      # 6. Attente exécution
       # =========================
       - name: ⏳ Wait Kaggle execution
         run: |
-          NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
+          NOTEBOOK="${{ github.event.inputs.notebook_slug }}"
 
           echo "⏳ Monitoring: $NOTEBOOK"
 
@@ -91,21 +102,19 @@ jobs:
           done
 
       # =========================
-      # 6. Download results
+      # 7. Download results
       # =========================
       - name: 📥 Download results
         run: |
-          NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
+          NOTEBOOK="${{ github.event.inputs.notebook_slug }}"
 
           mkdir -p ./results
-
           kaggle kernels output $NOTEBOOK -p ./results/
 
-          echo "📁 Files:"
           ls -la ./results/
 
       # =========================
-      # 7. Upload artifacts
+      # 8. Upload artifacts
       # =========================
       - name: 📤 Upload artifacts
         uses: actions/upload-artifact@v4
@@ -115,11 +124,11 @@ jobs:
           retention-days: 30
 
       # =========================
-      # 8. Summary
+      # 9. Summary
       # =========================
       - name: 📊 Summary
         run: |
           echo "## 🚀 Kaggle Run Completed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Notebook:** ${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Notebook:** ${{ github.event.inputs.notebook_slug }}" >> $GITHUB_STEP_SUMMARY
           echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
