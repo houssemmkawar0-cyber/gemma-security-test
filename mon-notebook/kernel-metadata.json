@@ -1,0 +1,10 @@
+{
+  "id": "mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah",
+  "title": "promptfoo-ollama-yimchi-mrigil-hamdoulah",
+  "code_file": "promptfoo-ollama-yimchi-mrigil-hamdoulah.ipynb",
+  "language": "python",
+  "kernel_type": "notebook",
+  "is_private": true,
+  "enable_gpu": true,
+  "enable_internet": true
+}
