@@ -43,22 +43,7 @@ jobs:
           chmod 600 ~/.kaggle/kaggle.json
 
       # =========================
-      # 3. Inject GROQ_API_KEY
-      # =========================
-      - name: 🔑 Inject GROQ_API_KEY
-        run: |
-          sed -i "s|PLACEHOLDER_GROQ|${{ secrets.GROQ_API_KEY }}|g" \
-            mon-notebook/kernel-metadata.json
-
-          if grep -q "PLACEHOLDER_GROQ" mon-notebook/kernel-metadata.json; then
-            echo "❌ Injection échouée"
-            exit 1
-          fi
-
-          echo "✅ GROQ_API_KEY injectée"
-
-      # =========================
-      # 4. Push notebook to Kaggle
+      # 3. Push notebook to Kaggle
       # =========================
       - name: 🚀 Push notebook to Kaggle
         run: |
@@ -66,7 +51,7 @@ jobs:
           kaggle kernels push -p mon-notebook
 
       # =========================
-      # 5. Wait execution
+      # 4. Wait execution
       # =========================
       - name: ⏳ Wait Kaggle execution
         run: |
@@ -97,7 +82,7 @@ jobs:
           done
 
       # =========================
-      # 6. Download results
+      # 5. Download results
       # =========================
       - name: 📥 Download results
         run: |
@@ -111,7 +96,7 @@ jobs:
           ls -la ./results/
 
       # =========================
-      # 7. Upload artifacts
+      # 6. Upload artifacts
       # =========================
       - name: 📤 Upload artifacts
         uses: actions/upload-artifact@v4
@@ -121,7 +106,7 @@ jobs:
           retention-days: 30
 
       # =========================
-      # 8. Summary
+      # 7. Summary
       # =========================
       - name: 📊 Summary
         run: |

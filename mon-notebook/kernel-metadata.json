@@ -7,7 +7,6 @@
   "is_private": true,
   "enable_gpu": true,
   "enable_internet": true,
-  "env_vars": {
-    "GROQ_API_KEY": "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"
-  }
+  "dataset_sources": [],
+  "kernel_sources": []
 }
