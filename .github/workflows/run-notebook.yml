@@ -19,7 +19,7 @@ jobs:
   run-kaggle-notebook:
     name: 🏃 Kaggle GPU Run
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     steps:
 
@@ -35,11 +35,8 @@ jobs:
       - name: 🔧 Setup Kaggle API
         run: |
           pip install kaggle --upgrade
-
           mkdir -p ~/.kaggle
-
           echo '{"username":"${{ secrets.KAGGLE_USERNAME }}","key":"${{ secrets.KAGGLE_KEY }}"}' > ~/.kaggle/kaggle.json
-
           chmod 600 ~/.kaggle/kaggle.json
 
       # =========================
@@ -56,15 +53,11 @@ jobs:
       - name: ⏳ Wait Kaggle execution
         run: |
           NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
-
           echo "⏳ Monitoring: $NOTEBOOK"
 
-          for i in {1..120}; do
-
+          for i in {1..200}; do
             STATUS=$(kaggle kernels status $NOTEBOOK 2>&1)
-
-            echo "[$i/120] $STATUS"
-
+            echo "[$i/200] $STATUS"
             STATUS_LC=$(echo "$STATUS" | tr '[:upper:]' '[:lower:]')
 
             if echo "$STATUS_LC" | grep -q "complete"; then
@@ -78,7 +71,6 @@ jobs:
             fi
 
             sleep 30
-
           done
 
       # =========================
@@ -87,30 +79,68 @@ jobs:
       - name: 📥 Download results
         run: |
           NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
-
           mkdir -p ./results
-
           kaggle kernels output $NOTEBOOK -p ./results/
-
           echo "📁 Files:"
           ls -la ./results/
 
       # =========================
-      # 6. Upload artifacts
+      # 6. Lire URL MLflow
+      # =========================
+      - name: 🌐 Read MLflow URL
+        id: mlflow
+        run: |
+          URL_FILE="./results/mlflow_url.txt"
+
+          if [ -f "$URL_FILE" ]; then
+            MLFLOW_URL=$(cat "$URL_FILE")
+            echo "✅ URL MLflow : $MLFLOW_URL"
+            echo "url=$MLFLOW_URL" >> $GITHUB_OUTPUT
+          else
+            echo "⚠️ mlflow_url.txt non trouvé"
+            echo "url=" >> $GITHUB_OUTPUT
+          fi
+
+      # =========================
+      # 7. Upload artifacts
       # =========================
       - name: 📤 Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: kaggle-results
           path: ./results/
+          if-no-files-found: warn
           retention-days: 30
 
       # =========================
-      # 7. Summary
+      # 8. Summary avec lien MLflow
+      # — Ouvre GitHub Actions dans
+      #   ton navigateur, clique sur
+      #   le run, tu vois le lien
+      #   MLflow cliquable directement
       # =========================
       - name: 📊 Summary
         run: |
+          MLFLOW_URL="${{ steps.mlflow.outputs.url }}"
+
           echo "## 🚀 Kaggle Run Completed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Notebook:** ${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}" >> $GITHUB_STEP_SUMMARY
           echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          if [ -n "$MLFLOW_URL" ]; then
+            echo "## 🌐 MLflow — Ouvrir maintenant" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "### 👉 [CLIQUER ICI POUR OUVRIR MLFLOW]($MLFLOW_URL)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Page | Lien direct |" >> $GITHUB_STEP_SUMMARY
+            echo "|------|-------------|" >> $GITHUB_STEP_SUMMARY
+            echo "| 🏠 Accueil | [$MLFLOW_URL]($MLFLOW_URL) |" >> $GITHUB_STEP_SUMMARY
+            echo "| 📊 Experiments | [$MLFLOW_URL/#/experiments]($MLFLOW_URL/#/experiments) |" >> $GITHUB_STEP_SUMMARY
+            echo "| 🔬 Runs | [$MLFLOW_URL/#/experiments/1/runs]($MLFLOW_URL/#/experiments/1/runs) |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> ⚠️ Ce lien est valide **uniquement** pendant que la session Kaggle est encore active" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ URL MLflow non disponible" >> $GITHUB_STEP_SUMMARY
+          fi
