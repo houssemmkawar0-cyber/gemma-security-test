@@ -1,4 +1,4 @@
-name: 🚀 Exécuter notebook Kaggle
+name: 🚀 Exécuter notebook Kaggle avec MLflow
 
 on:
   workflow_dispatch:
@@ -19,7 +19,10 @@ jobs:
   run-kaggle-notebook:
     name: 🏃 Kaggle GPU Run
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
+
+    outputs:
+      mlflow_url: ${{ steps.extract.outputs.mlflow_url }}
 
     steps:
 
@@ -40,108 +43,70 @@ jobs:
           chmod 600 ~/.kaggle/kaggle.json
 
       # =========================
-      # 3. Push notebook to Kaggle
+      # 3. Push and Run notebook
       # =========================
-      - name: 🚀 Push notebook to Kaggle
+      - name: 🚀 Push and run notebook
         run: |
           echo "🚀 Pushing notebook..."
           kaggle kernels push -p mon-notebook
 
       # =========================
-      # 4. Attendre URL MLflow
-      # puis s'arrêter sans attendre
-      # la fin du notebook
+      # 4. Wait execution (max 25 min pour tenir compte keep-alive)
       # =========================
-      - name: ⏳ Attendre URL MLflow puis s'arrêter
-        id: mlflow
+      - name: ⏳ Wait Kaggle execution
         run: |
           NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
+          
           echo "⏳ Monitoring: $NOTEBOOK"
-          MLFLOW_FOUND=false
-
-          for i in {1..120}; do
-
+          
+          # Attente jusqu'à 35 minutes (25 min exécution + marge)
+          for i in {1..70}; do
             STATUS=$(kaggle kernels status $NOTEBOOK 2>&1)
-            STATUS_LC=$(echo "$STATUS" | tr '[:upper:]' '[:lower:]')
-            echo "[$i/120] $STATUS"
-
-            # ── Notebook en cours → chercher l'URL toutes les 3 itérations
-            if echo "$STATUS_LC" | grep -q "running"; then
-
-              if [ $((i % 3)) -eq 0 ]; then
-
-                echo "🔄 Tentative récupération mlflow_url.txt..."
-                mkdir -p ./results
-                kaggle kernels output $NOTEBOOK -p ./results/ 2>/dev/null || true
-
-                if [ -f "./results/mlflow_url.txt" ]; then
-                  MLFLOW_URL=$(cat ./results/mlflow_url.txt)
-                  echo "✅ URL MLflow trouvée : $MLFLOW_URL"
-                  echo "url=$MLFLOW_URL" >> $GITHUB_OUTPUT
-                  echo "status=running" >> $GITHUB_OUTPUT
-                  MLFLOW_FOUND=true
-                  # ✅ GitHub Actions s'arrête ici
-                  # Kaggle continue de tourner en arrière-plan
-                  break
-                else
-                  echo "   ⏳ mlflow_url.txt pas encore disponible..."
-                fi
-
-              fi
-            fi
-
-            # ── Notebook terminé normalement
-            if echo "$STATUS_LC" | grep -q "complete"; then
-              echo "✅ Notebook terminé"
-              mkdir -p ./results
-              kaggle kernels output $NOTEBOOK -p ./results/ 2>/dev/null || true
-              if [ -f "./results/mlflow_url.txt" ]; then
-                MLFLOW_URL=$(cat ./results/mlflow_url.txt)
-                echo "url=$MLFLOW_URL" >> $GITHUB_OUTPUT
-              else
-                echo "url=" >> $GITHUB_OUTPUT
-              fi
-              echo "status=complete" >> $GITHUB_OUTPUT
-              MLFLOW_FOUND=true
+            echo "[$i/70] $STATUS"
+            
+            if echo "$STATUS" | grep -qi "complete"; then
+              echo "✅ SUCCESS"
               break
             fi
-
-            # ── Notebook en erreur
-            if echo "$STATUS_LC" | grep -q "error"; then
-              echo "⚠️ Notebook en erreur"
-              mkdir -p ./results
-              kaggle kernels output $NOTEBOOK -p ./results/ 2>/dev/null || true
-              if [ -f "./results/mlflow_url.txt" ]; then
-                MLFLOW_URL=$(cat ./results/mlflow_url.txt)
-                echo "url=$MLFLOW_URL" >> $GITHUB_OUTPUT
-              else
-                echo "url=" >> $GITHUB_OUTPUT
-              fi
-              echo "status=error" >> $GITHUB_OUTPUT
-              MLFLOW_FOUND=true
-              break
+            
+            if echo "$STATUS" | grep -qi "error"; then
+              echo "❌ FAILED"
+              exit 1
             fi
-
+            
             sleep 30
           done
 
-          # Si URL jamais trouvée
-          if [ "$MLFLOW_FOUND" = false ]; then
-            echo "url=" >> $GITHUB_OUTPUT
-            echo "status=timeout" >> $GITHUB_OUTPUT
-          fi
-
       # =========================
-      # 5. Download results
-      # (ce qui est déjà disponible)
+      # 5. Download results + EXTRACT MLflow URL
       # =========================
-      - name: 📥 Download results
+      - name: 📥 Download results with MLflow URL
+        id: extract
         run: |
           NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
+          
           mkdir -p ./results
-          kaggle kernels output $NOTEBOOK -p ./results/ 2>/dev/null || true
-          echo "📁 Files disponibles:"
-          ls -la ./results/ 2>/dev/null || echo "Aucun fichier"
+          kaggle kernels output $NOTEBOOK -p ./results/
+          
+          echo "📁 Fichiers récupérés:"
+          ls -la ./results/
+          
+          # 🔥 EXTRAIRE L'URL MLflow
+          if [ -f "./results/mlflow_url.txt" ]; then
+            MLFLOW_URL=$(cat ./results/mlflow_url.txt)
+            echo "mlflow_url=$MLFLOW_URL" >> $GITHUB_OUTPUT
+            echo "🌐 URL MLflow: $MLFLOW_URL"
+          else
+            echo "⚠️ Fichier mlflow_url.txt non trouvé"
+            # Chercher dans les logs
+            if [ -f "./results/ollama.log" ]; then
+              MLFLOW_URL=$(grep -o "https://[a-z0-9]*\.ngrok\.io" ./results/ollama.log | head -1 || echo "")
+              if [ -n "$MLFLOW_URL" ]; then
+                echo "mlflow_url=$MLFLOW_URL" >> $GITHUB_OUTPUT
+                echo "🌐 URL trouvée dans logs: $MLFLOW_URL"
+              fi
+            fi
+          fi
 
       # =========================
       # 6. Upload artifacts
@@ -151,55 +116,25 @@ jobs:
         with:
           name: kaggle-results
           path: ./results/
-          if-no-files-found: warn
           retention-days: 30
 
       # =========================
-      # 7. Summary avec lien MLflow
+      # 7. Summary with MLflow Link
       # =========================
       - name: 📊 Summary
         run: |
-          MLFLOW_URL="${{ steps.mlflow.outputs.url }}"
-          NOTEBOOK_STATUS="${{ steps.mlflow.outputs.status }}"
-
-          echo "## 🚀 Kaggle Notebook" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Kaggle Run Completed" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Notebook:** ${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}" >> $GITHUB_STEP_SUMMARY
           echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
-          # Statut
-          if [ "$NOTEBOOK_STATUS" = "complete" ]; then
-            echo "**Statut:** ✅ Terminé avec succès" >> $GITHUB_STEP_SUMMARY
-          elif [ "$NOTEBOOK_STATUS" = "running" ]; then
-            echo "**Statut:** 🔄 En cours — GitHub Actions s'est arrêté après récupération URL" >> $GITHUB_STEP_SUMMARY
-          elif [ "$NOTEBOOK_STATUS" = "error" ]; then
-            echo "**Statut:** ❌ Erreur notebook" >> $GITHUB_STEP_SUMMARY
+          
+          if [ -n "${{ steps.extract.outputs.mlflow_url }}" ]; then
             echo "" >> $GITHUB_STEP_SUMMARY
-            echo "> 🔍 [Voir logs Kaggle](https://www.kaggle.com/code/mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah)" >> $GITHUB_STEP_SUMMARY
-          elif [ "$NOTEBOOK_STATUS" = "timeout" ]; then
-            echo "**Statut:** ⏰ Timeout — URL MLflow non trouvée dans les temps" >> $GITHUB_STEP_SUMMARY
+            echo "### 🌐 MLflow Interface (valable 18 min):" >> $GITHUB_STEP_SUMMARY
+            echo "[${{ steps.extract.outputs.mlflow_url }}](${{ steps.extract.outputs.mlflow_url }})" >> $GITHUB_STEP_SUMMARY
           fi
-
+          
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📁 Téléchargez les résultats dans l'onglet **Artifacts**" >> $GITHUB_STEP_SUMMARY
 
-          # Lien MLflow
-          if [ -n "$MLFLOW_URL" ]; then
-            echo "## 🌐 MLflow — Clique maintenant !" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 👉 [OUVRIR MLFLOW]($MLFLOW_URL)" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Page | Lien direct |" >> $GITHUB_STEP_SUMMARY
-            echo "|------|-------------|" >> $GITHUB_STEP_SUMMARY
-            echo "| 🏠 Accueil | [$MLFLOW_URL]($MLFLOW_URL) |" >> $GITHUB_STEP_SUMMARY
-            echo "| 📊 Experiments | [$MLFLOW_URL/#/experiments]($MLFLOW_URL/#/experiments) |" >> $GITHUB_STEP_SUMMARY
-            echo "| 🔬 Runs | [$MLFLOW_URL/#/experiments/1/runs]($MLFLOW_URL/#/experiments/1/runs) |" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "> ⚠️ Lien valide tant que le notebook Kaggle est encore actif" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "## ⚠️ MLflow non disponible" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "Le notebook a planté avant que ngrok soit démarré." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "> 🔍 [Voir logs Kaggle](https://www.kaggle.com/code/mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah)" >> $GITHUB_STEP_SUMMARY
-          fi
+  
