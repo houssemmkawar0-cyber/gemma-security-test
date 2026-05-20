@@ -1,4 +1,4 @@
-name: 🚀 Exécuter notebook Kaggle avec MLflow
+name: 🚀 Exécuter notebook Kaggle
 
 on:
   workflow_dispatch:
@@ -21,9 +21,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
 
-    outputs:
-      mlflow_url: ${{ steps.extract.outputs.mlflow_url }}
-
     steps:
 
       # =========================
@@ -38,75 +35,65 @@ jobs:
       - name: 🔧 Setup Kaggle API
         run: |
           pip install kaggle --upgrade
+
           mkdir -p ~/.kaggle
+
           echo '{"username":"${{ secrets.KAGGLE_USERNAME }}","key":"${{ secrets.KAGGLE_KEY }}"}' > ~/.kaggle/kaggle.json
+
           chmod 600 ~/.kaggle/kaggle.json
 
       # =========================
-      # 3. Push and Run notebook
+      # 3. Push notebook to Kaggle
       # =========================
-      - name: 🚀 Push and run notebook
+      - name: 🚀 Push notebook to Kaggle
         run: |
           echo "🚀 Pushing notebook..."
           kaggle kernels push -p mon-notebook
 
       # =========================
-      # 4. Wait execution (max 25 min pour tenir compte keep-alive)
+      # 4. Wait execution
       # =========================
       - name: ⏳ Wait Kaggle execution
         run: |
           NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
-          
+
           echo "⏳ Monitoring: $NOTEBOOK"
-          
-          # Attente jusqu'à 35 minutes (25 min exécution + marge)
-          for i in {1..70}; do
+
+          for i in {1..120}; do
+
             STATUS=$(kaggle kernels status $NOTEBOOK 2>&1)
-            echo "[$i/70] $STATUS"
-            
-            if echo "$STATUS" | grep -qi "complete"; then
+
+            echo "[$i/120] $STATUS"
+
+            STATUS_LC=$(echo "$STATUS" | tr '[:upper:]' '[:lower:]')
+
+            if echo "$STATUS_LC" | grep -q "complete"; then
               echo "✅ SUCCESS"
               break
             fi
-            
-            if echo "$STATUS" | grep -qi "error"; then
+
+            if echo "$STATUS_LC" | grep -q "error"; then
               echo "❌ FAILED"
               exit 1
             fi
-            
+
             sleep 30
+
           done
 
       # =========================
-      # 5. Download results + EXTRACT MLflow URL
+      # 5. Download results
       # =========================
-      - name: 📥 Download results with MLflow URL
-        id: extract
+      - name: 📥 Download results
         run: |
           NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
-          
+
           mkdir -p ./results
+
           kaggle kernels output $NOTEBOOK -p ./results/
-          
-          echo "📁 Fichiers récupérés:"
+
+          echo "📁 Files:"
           ls -la ./results/
-          
-          # 🔥 EXTRAIRE L'URL MLflow
-          if [ -f "./results/mlflow_url.txt" ]; then
-            MLFLOW_URL=$(cat ./results/mlflow_url.txt)
-            echo "mlflow_url=$MLFLOW_URL" >> $GITHUB_OUTPUT
-            echo "🌐 URL MLflow: $MLFLOW_URL"
-          else
-            echo "⚠️ Fichier mlflow_url.txt non trouvé"
-            # Chercher dans les logs
-            if [ -f "./results/ollama.log" ]; then
-              MLFLOW_URL=$(grep -o "https://[a-z0-9]*\.ngrok\.io" ./results/ollama.log | head -1 || echo "")
-              if [ -n "$MLFLOW_URL" ]; then
-                echo "mlflow_url=$MLFLOW_URL" >> $GITHUB_OUTPUT
-                echo "🌐 URL trouvée dans logs: $MLFLOW_URL"
-              fi
-            fi
-          fi
 
       # =========================
       # 6. Upload artifacts
@@ -119,7 +106,7 @@ jobs:
           retention-days: 30
 
       # =========================
-      # 7. Summary with MLflow Link
+      # 7. Summary
       # =========================
       - name: 📊 Summary
         run: |
@@ -127,14 +114,3 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Notebook:** ${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}" >> $GITHUB_STEP_SUMMARY
           echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
-          
-          if [ -n "${{ steps.extract.outputs.mlflow_url }}" ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "### 🌐 MLflow Interface (valable 18 min):" >> $GITHUB_STEP_SUMMARY
-            echo "[${{ steps.extract.outputs.mlflow_url }}](${{ steps.extract.outputs.mlflow_url }})" >> $GITHUB_STEP_SUMMARY
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "📁 Téléchargez les résultats dans l'onglet **Artifacts**" >> $GITHUB_STEP_SUMMARY
-
-  
