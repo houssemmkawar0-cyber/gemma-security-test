@@ -2,27 +2,16 @@ name: 🚀 Exécuter notebook Kaggle
 
 on:
   workflow_dispatch:
-    inputs:
-      notebook_slug:
-        description: "Notebook Kaggle à exécuter"
-        required: false
-        default: "mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah"
-        type: string
   push:
     branches: [ main, master ]
-  schedule:
-    - cron: "0 2 * * *"
 
 jobs:
   run-kaggle-notebook:
-    name: 🏃 Kaggle GPU Run
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
     steps:
-
-      - name: 📥 Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: 🔧 Setup Kaggle API
         run: |
@@ -31,34 +20,28 @@ jobs:
           echo '{"username":"${{ secrets.KAGGLE_USERNAME }}","key":"${{ secrets.KAGGLE_KEY }}"}' > ~/.kaggle/kaggle.json
           chmod 600 ~/.kaggle/kaggle.json
 
-      - name: 🚀 Push notebook to Kaggle
+      - name: 🚀 Push notebook
         run: |
-          echo "🚀 Pushing notebook from ./mon-notebook ..."
-          kaggle kernels push -p ./mon-notebook --no-wait
-          echo "✅ Notebook pushed!"
-          echo "🔗 https://www.kaggle.com/code/${{ secrets.KAGGLE_USERNAME }}/promptfoo-ollama-yimchi-mrigil-hamdoulah"
+          echo "🚀 Pushing notebook..."
+          kaggle kernels push -p ./mon-notebook
+          echo "✅ Push completed!"
 
-      # ========== ÉTAPE 4 SUPPRIMÉE (c'était la cause de l'erreur) ==========
+      # PAS DE MONITORING - supprimé volontairement
 
       - name: 📥 Download results
         continue-on-error: true
         run: |
           NOTEBOOK="${{ secrets.KAGGLE_USERNAME }}/promptfoo-ollama-yimchi-mrigil-hamdoulah"
           mkdir -p ./results
-          kaggle kernels output $NOTEBOOK -p ./results/ || echo "No results yet"
-          ls -la ./results/ || echo "No files"
+          kaggle kernels output $NOTEBOOK -p ./results/ || echo "No results"
+          ls -la ./results/
 
-      - name: 📤 Upload artifacts
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: kaggle-results
+          name: results
           path: ./results/
-          retention-days: 30
           if-no-files-found: warn
 
       - name: 📊 Summary
         run: |
-          echo "## 🚀 Kaggle Notebook Pushed" >> $GITHUB_STEP_SUMMARY
-          echo "**Notebook:** ${{ secrets.KAGGLE_USERNAME }}/promptfoo-ollama-yimchi-mrigil-hamdoulah" >> $GITHUB_STEP_SUMMARY
-          echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
-          echo "🔗 [View on Kaggle](https://www.kaggle.com/code/${{ secrets.KAGGLE_USERNAME }}/promptfoo-ollama-yimchi-mrigil-hamdoulah)" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Notebook pushed successfully!" >> $GITHUB_STEP_SUMMARY
