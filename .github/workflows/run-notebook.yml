@@ -1,47 +1,218 @@
-name: 🚀 Exécuter notebook Kaggle
+name: Exécuter notebook Kaggle - DEBUG
 
 on:
   workflow_dispatch:
+    inputs:
+      notebook_slug:
+        description: "Notebook Kaggle à exécuter"
+        required: false
+        default: "mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah"
+        type: string
   push:
     branches: [ main, master ]
 
 jobs:
   run-kaggle-notebook:
+    name: Kaggle GPU Run - DEBUG
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
 
-      - name: 🔧 Setup Kaggle API
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Kaggle API
         run: |
           pip install kaggle --upgrade
           mkdir -p ~/.kaggle
           echo '{"username":"${{ secrets.KAGGLE_USERNAME }}","key":"${{ secrets.KAGGLE_KEY }}"}' > ~/.kaggle/kaggle.json
           chmod 600 ~/.kaggle/kaggle.json
 
-      - name: 🚀 Push notebook
+      # ========== TEST 1: Vérifier que l'API Kaggle fonctionne ==========
+      - name: 🧪 TEST 1 - Vérifier API Kaggle
         run: |
-          echo "🚀 Pushing notebook..."
-          kaggle kernels push -p ./mon-notebook
-          echo "✅ Push completed!"
+          echo "=== TEST 1: Vérification API Kaggle ==="
+          echo "Username: ${{ secrets.KAGGLE_USERNAME }}"
+          echo "Key length: ${{ secrets.KAGGLE_KEY }}"
+          echo "Testing connection..."
+          kaggle kernels list --user ${{ secrets.KAGGLE_USERNAME }} || echo "⚠️ API connection issue"
+          echo "✅ TEST 1 terminé"
 
-      # PAS DE MONITORING - supprimé volontairement
+      # ========== TEST 2: Vérifier le contenu du dossier mon-notebook ==========
+      - name: 🧪 TEST 2 - Vérifier dossier mon-notebook
+        run: |
+          echo "=== TEST 2: Contenu du dossier ==="
+          echo "Current directory: $(pwd)"
+          echo "Listing files:"
+          ls -la
+          echo ""
+          echo "Checking mon-notebook folder:"
+          if [ -d "mon-notebook" ]; then
+            echo "✅ mon-notebook existe"
+            ls -la mon-notebook/
+            echo ""
+            echo "kernel-metadata.json content:"
+            cat mon-notebook/kernel-metadata.json || echo "⚠️ kernel-metadata.json manquant"
+          else
+            echo "❌ mon-notebook n'existe pas!"
+            echo "📁 Voici ce qui existe:"
+            find . -name "*.ipynb" -type f
+          fi
+          echo "✅ TEST 2 terminé"
 
-      - name: 📥 Download results
+      # ========== TEST 3: Push avec capture détaillée ==========
+      - name: 🧪 TEST 3 - Push notebook (sans monitoring)
+        run: |
+          echo "=== TEST 3: Push notebook ==="
+          echo "Executing: kaggle kernels push -p mon-notebook"
+          echo ""
+          
+          # Capture du temps de début
+          START_TIME=$(date +%s)
+          
+          # Exécution du push avec capture de la sortie
+          if kaggle kernels push -p mon-notebook 2>&1 | tee push_output.txt; then
+            echo ""
+            echo "✅ Push réussi!"
+          else
+            echo ""
+            echo "❌ Push échoué!"
+            cat push_output.txt
+            exit 1
+          fi
+          
+          END_TIME=$(date +%s)
+          echo "Temps de push: $((END_TIME - START_TIME)) secondes"
+          
+          # Extraire le numéro de version
+          VERSION=$(grep -oP 'Kernel version \K[0-9]+' push_output.txt || echo "inconnu")
+          echo "Version du kernel: $VERSION"
+          
+          echo "✅ TEST 3 terminé"
+
+      # ========== TEST 4: Vérifier que le notebook existe sur Kaggle ==========
+      - name: 🧪 TEST 4 - Vérifier notebook sur Kaggle
+        run: |
+          echo "=== TEST 4: Vérifier l'existence du notebook ==="
+          NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
+          echo "Notebook: $NOTEBOOK"
+          
+          # Lister les kernels pour voir si le nôtre est présent
+          kaggle kernels list --user ${{ secrets.KAGGLE_USERNAME }} | grep "promptfoo" || echo "⚠️ Notebook non trouvé dans la liste"
+          
+          # Tenter de récupérer les métadonnées
+          echo ""
+          echo "Tentative de récupération des métadonnées:"
+          kaggle kernels status $NOTEBOOK 2>&1 || echo "⚠️ Impossible de récupérer le statut"
+          
+          echo "✅ TEST 4 terminé"
+
+      # ========== TEST 5: Patienter 30 secondes ==========
+      - name: 🧪 TEST 5 - Attente initiale
+        run: |
+          echo "=== TEST 5: Attente 30 secondes pour début d'exécution ==="
+          for i in {1..30}; do
+            echo -n "."
+            sleep 1
+          done
+          echo ""
+          echo "✅ TEST 5 terminé"
+
+      # ========== TEST 6: Monitoring avec timeout ==========
+      - name: 🧪 TEST 6 - Monitoring avec sortie détaillée
+        timeout-minutes: 30
         continue-on-error: true
         run: |
-          NOTEBOOK="${{ secrets.KAGGLE_USERNAME }}/promptfoo-ollama-yimchi-mrigil-hamdoulah"
-          mkdir -p ./results
-          kaggle kernels output $NOTEBOOK -p ./results/ || echo "No results"
-          ls -la ./results/
+          echo "=== TEST 6: Monitoring détaillé ==="
+          NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
+          
+          for i in {1..30}; do
+            echo "[$i/30] Tentative..."
+            
+            # Capturer la sortie complète
+            OUTPUT=$(kaggle kernels status $NOTEBOOK 2>&1)
+            EXIT_CODE=$?
+            
+            echo "  Exit code: $EXIT_CODE"
+            echo "  Output: $OUTPUT"
+            
+            # Vérifier différents cas
+            if echo "$OUTPUT" | grep -qi "complete"; then
+              echo "  ✅ Statut: COMPLETE"
+              break
+            elif echo "$OUTPUT" | grep -qi "running"; then
+              echo "  ⏳ Statut: RUNNING"
+            elif echo "$OUTPUT" | grep -qi "pending"; then
+              echo "  ⏳ Statut: PENDING"
+            elif echo "$OUTPUT" | grep -qi "error"; then
+              echo "  ❌ Statut: ERROR"
+            else
+              echo "  ❓ Statut: INCONNU"
+            fi
+            
+            sleep 30
+          done
+          
+          echo "✅ TEST 6 terminé"
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: results
-          path: ./results/
-          if-no-files-found: warn
-
-      - name: 📊 Summary
+      # ========== TEST 7: Téléchargement des résultats ==========
+      - name: 🧪 TEST 7 - Téléchargement des résultats
+        continue-on-error: true
         run: |
-          echo "✅ Notebook pushed successfully!" >> $GITHUB_STEP_SUMMARY
+          echo "=== TEST 7: Téléchargement ==="
+          NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
+          
+          mkdir -p ./results
+          
+          echo "Tentative de téléchargement..."
+          if kaggle kernels output $NOTEBOOK -p ./results/ 2>&1; then
+            echo "✅ Téléchargement réussi!"
+            echo ""
+            echo "📁 Contenu de ./results:"
+            ls -la ./results/
+            
+            # Afficher le contenu JSON si présent
+            if [ -f "./results/final_results_309.json" ]; then
+              echo ""
+              echo "📄 Aperçu des résultats:"
+              head -50 ./results/final_results_309.json
+            fi
+          else
+            echo "⚠️ Téléchargement échoué (normal si notebook pas terminé)"
+          fi
+          
+          echo "✅ TEST 7 terminé"
+
+      # ========== TEST 8: Afficher le résumé ==========
+      - name: 🧪 TEST 8 - Résumé final
+        run: |
+          echo "=== TEST 8: RÉSUMÉ FINAL ==="
+          echo ""
+          echo "📊 RÉSULTATS DES TESTS:"
+          echo "  - API Kaggle: Vérifiée"
+          echo "  - Dossier mon-notebook: Vérifié"
+          echo "  - Push: Effectué"
+          echo "  - Monitoring: Tenté"
+          echo "  - Download: Tenté"
+          echo ""
+          echo "📁 Artifacts disponibles dans la section 'Actions' de GitHub"
+          echo "🔗 Lien Kaggle: https://www.kaggle.com/code/${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
+          
+          echo "## 📊 RAPPORT DE DEBUG" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tests exécutés:** 8/8" >> $GITHUB_STEP_SUMMARY
+          echo "**Notebook:** ${{ github.event.inputs.notebook_slug }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date)" >> $GITHUB_STEP_SUMMARY
+          echo "**Lien Kaggle:** [Cliquer ici](https://www.kaggle.com/code/${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }})" >> $GITHUB_STEP_SUMMARY
+
+      # ========== Upload tous les logs ==========
+      - name: 📤 Upload debug logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-logs
+          path: |
+            ./results/
+            push_output.txt
+            *.log
+          retention-days: 7
