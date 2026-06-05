@@ -17,7 +17,7 @@ jobs:
   run-kaggle-notebook:
     name: Kaggle GPU Run
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    timeout-minutes: 60
 
     steps:
 
@@ -39,106 +39,33 @@ jobs:
 
       - name: Push notebook to Kaggle
         run: |
-          echo "🚀 Pushing notebook..."
+          echo "🚀 Pushing notebook to Kaggle..."
           kaggle kernels push -p mon-notebook
-          echo "✅ Push completed"
-
-      - name: Wait for Kaggle startup
-        run: |
-          echo "⏳ Attente du démarrage de la session Kaggle..."
-          sleep 120
-
-      - name: Monitor notebook execution
-        run: |
-          NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
-          
-          echo "📌 Monitoring du notebook : $NOTEBOOK"
-          
-          COMPLETED=false
-          
-          for i in {1..120}; do
-            STATUS=$(kaggle kernels status "$NOTEBOOK" 2>&1 || true)
-            
-            echo ""
-            echo "=============================="
-            echo "Tentative $i / 120"
-            echo "$STATUS"
-            echo "=============================="
-            
-            STATUS_LC=$(echo "$STATUS" | tr '[:upper:]' '[:lower:]')
-            
-            if echo "$STATUS_LC" | grep -q "500 server error"; then
-              echo "⚠️ Erreur 500 Kaggle - nouvelle tentative dans 30s"
-              sleep 30
-              continue
-            fi
-            
-            if echo "$STATUS_LC" | grep -q "internal server error"; then
-              echo "⚠️ Internal Server Error Kaggle - nouvelle tentative dans 30s"
-              sleep 30
-              continue
-            fi
-            
-            if echo "$STATUS_LC" | grep -q "complete"; then
-              echo "✅ Notebook terminé"
-              COMPLETED=true
-              break
-            fi
-            
-            if echo "$STATUS_LC" | grep -q "running"; then
-              echo "🏃 Notebook en cours d'exécution"
-              sleep 30
-              continue
-            fi
-            
-            if echo "$STATUS_LC" | grep -q "pending"; then
-              echo "⏳ Notebook en attente"
-              sleep 30
-              continue
-            fi
-            
-            if echo "$STATUS_LC" | grep -q "failed"; then
-              echo "❌ Notebook failed"
-              exit 1
-            fi
-            
-            echo "ℹ️ Statut non reconnu, attente 30s"
-            sleep 30
-          done
-          
-          if [ "$COMPLETED" != "true" ]; then
-            echo "❌ Timeout atteint : notebook non terminé après 60 minutes"
-            exit 1
-          fi
-
-      - name: Download results
-        continue-on-error: true
-        run: |
-          NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
-          mkdir -p results
-          echo "📥 Téléchargement des résultats..."
-          kaggle kernels output "$NOTEBOOK" -p results/ || true
           echo ""
-          echo "📁 Contenu du dossier results :"
-          ls -lah results || true
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: kaggle-results
-          path: results/
-          retention-days: 30
-          if-no-files-found: warn
+          echo "✅ Push completed successfully!"
+          echo ""
+          echo "📌 Le notebook est maintenant sur Kaggle"
+          echo "🔗 https://www.kaggle.com/code/${{ secrets.KAGGLE_USERNAME }}/promptfoo-ollama-yimchi-mrigil-hamdoulah"
 
       - name: Summary
         run: |
-          NOTEBOOK="${{ github.event.inputs.notebook_slug || 'mkawarhoussem/promptfoo-ollama-yimchi-mrigil-hamdoulah' }}"
           {
-            echo "## 🚀 Kaggle Notebook Execution"
+            echo "## 🚀 Notebook pushed to Kaggle"
             echo ""
-            echo "**Notebook :** \`$NOTEBOOK\`"
-            echo "**Date :** $(date)"
+            echo "**Status:** ✅ Push successful"
+            echo "**Date:** $(date)"
             echo ""
-            echo "Les résultats sont disponibles dans les Artifacts GitHub Actions."
+            echo "### 📌 Next steps"
+            echo "1. Go to Kaggle notebook:"
+            echo "   https://www.kaggle.com/code/${{ secrets.KAGGLE_USERNAME }}/promptfoo-ollama-yimchi-mrigil-hamdoulah"
+            echo ""
+            echo "2. Wait for execution to complete"
+            echo ""
+            echo "3. Download results from the **Output** tab"
+            echo ""
+            echo "4. Run MLflow locally:"
+            echo "   \`\`\`bash"
+            echo "   cd /path/to/downloaded/results"
+            echo "   mlflow ui --backend-store-uri file://./mlflow_tracking"
+            echo "   \`\`\`"
           } >> "$GITHUB_STEP_SUMMARY"
-        
